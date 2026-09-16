@@ -492,7 +492,7 @@
 <div class="modal-overlay hidden" id="entryOverlay">
   <div class="modal">
     <div class="modal-head">
-      <h2>Novo Lançamento</h2>
+      <h2 id="entryModalTitle">Novo Lançamento</h2>
       <button class="modal-close" id="closeModalBtn" aria-label="Fechar">×</button>
     </div>
     <p class="hint">Mesmos campos da planilha de fechamento — salva direto no Firebase.</p>
@@ -603,7 +603,7 @@ import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
-  getFirestore, collection, addDoc, setDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp
+  getFirestore, collection, addDoc, setDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -676,6 +676,9 @@ function paymentBadgesHtml(e){
     return `<span class="pg-badge pg-${p.forma}">${PG_LABEL[p.forma] || p.forma}</span>`;
   }
   return pays.map(p => `<span class="pg-badge pg-${p.forma}">${PG_LABEL[p.forma] || p.forma} ${fmtBRL(p.valor)}</span>`).join('');
+}
+function sortByOs(list){
+  return [...list].sort((a,b) => String(a.os).localeCompare(String(b.os), 'pt-BR', { numeric:true, sensitivity:'base' }));
 }
 function paymentPlainText(e){
   const pays = distributePayments(e);
@@ -863,9 +866,9 @@ function render(entries){
 function renderEntriesTable(){
   const filterMes = document.getElementById('entriesMesFilter').value;
   const filterAno = parseInt(document.getElementById('entriesAnoFilter').value) || DASHBOARD_YEAR;
-  const entries = latestEntries
+  const entries = sortByOs(latestEntries
     .filter(e => (e.ano || DASHBOARD_YEAR) === filterAno)
-    .filter(e => !filterMes || e.mes === filterMes);
+    .filter(e => !filterMes || e.mes === filterMes));
 
   document.getElementById('entriesCount').textContent = entries.length;
   const entriesTable = document.getElementById('entriesTable');
@@ -888,10 +891,13 @@ function renderEntriesTable(){
         <td>${fmtBRL(e.custoPeca)}</td>
         <td>${fmtBRL(e.custoAlex)}</td>
         <td>${fmtBRL(e.lucro)}</td>
-        <td>${currentRole === 'admin' ? `<button class="btn btn-danger" data-del="${e.id}">Excluir</button>` : ''}</td>
+        <td>${currentRole === 'admin'
+          ? `<button class="btn btn-ghost btn-sm" data-edit="${e.id}">Editar</button> <button class="btn btn-danger" data-del="${e.id}">Excluir</button>`
+          : ''}</td>
       </tr>
     `).join('');
     entriesBody_bindDeletes();
+    entriesBody_bindEdits(entries);
   }
 }
 
@@ -939,7 +945,7 @@ function buildPrintReport(mes, ano){
   const entriesAno = latestEntries.filter(e => (e.ano || DASHBOARD_YEAR) === ano);
   const effective = getEffectiveData(entriesAno, base);
   const i = MESES.indexOf(mes);
-  const entriesMes = entriesAno.filter(e => e.mes === mes);
+  const entriesMes = sortByOs(entriesAno.filter(e => e.mes === mes));
 
   const rowsHtml = entriesMes.length ? entriesMes.map(e => `
     <tr>
@@ -995,10 +1001,19 @@ document.getElementById('printBtn').addEventListener('click', () => {
 
 let currentRole = null;
 let deleteHandler = null;
+let editHandler = null;
 function entriesBody_bindDeletes(){
   document.querySelectorAll('#entriesBody [data-del]').forEach(btn => {
     btn.addEventListener('click', () => {
       if (deleteHandler) deleteHandler(btn.getAttribute('data-del'));
+    });
+  });
+}
+function entriesBody_bindEdits(entries){
+  document.querySelectorAll('#entriesBody [data-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const entry = entries.find(e => e.id === btn.getAttribute('data-edit'));
+      if (entry && editHandler) editHandler(entry);
     });
   });
 }
@@ -1190,6 +1205,7 @@ if (notConfigured){
   const addPgBtn = document.getElementById('addPgBtn');
   const pgSummaryEl = document.getElementById('pgSummary');
   let pgRows = [{ forma:'', valor:null }];
+  let editingEntry = null;
 
   function pgOptionsHtml(selected){
     const opts = [['DINHEIRO','Dinheiro'],['CREDITO','Cartão Crédito'],['DEBITO','Cartão Débito'],['PIX','PIX']];
@@ -1242,12 +1258,34 @@ if (notConfigured){
     entryForm.reset();
     entryError.textContent = '';
     document.getElementById('entrySuccess').textContent = '';
+    editingEntry = null;
+    document.getElementById('entryModalTitle').textContent = 'Novo Lançamento';
+    document.getElementById('saveEntryBtn').textContent = 'Salvar Lançamento';
     pgRows = [{ forma:'', valor:null }];
     renderPgRows();
     overlay.classList.remove('hidden');
     document.getElementById('fMes').focus();
   }
-  function closeModal(){ overlay.classList.add('hidden'); }
+  function openEditModal(entry){
+    entryForm.reset();
+    entryError.textContent = '';
+    document.getElementById('entrySuccess').textContent = '';
+    editingEntry = entry;
+    document.getElementById('entryModalTitle').textContent = 'Editar Lançamento';
+    document.getElementById('saveEntryBtn').textContent = 'Salvar Alterações';
+    document.getElementById('fMes').value = entry.mes;
+    document.getElementById('fOs').value = entry.os;
+    document.getElementById('fValor').value = entry.valor;
+    document.getElementById('fCustoPeca').value = entry.custoPeca || '';
+    document.getElementById('fCustoAlex').value = entry.custoAlex || '';
+    const pays = distributePayments(entry);
+    pgRows = pays.length ? pays.map(p => ({ forma: p.forma, valor: p.valor })) : [{ forma:'', valor:null }];
+    renderPgRows();
+    overlay.classList.remove('hidden');
+    document.getElementById('fMes').focus();
+  }
+  editHandler = openEditModal;
+  function closeModal(){ overlay.classList.add('hidden'); editingEntry = null; }
 
   // Depois de salvar, mantem o modal aberto (mesmo mes) pronto pro proximo lancamento.
   function resetFormForNextEntry(){
@@ -1320,6 +1358,26 @@ if (notConfigured){
     }
     const der = computeDerived(valor, pagamentos, custoPeca, custoAlex);
     const saveBtn = document.getElementById('saveEntryBtn');
+
+    if (editingEntry){
+      saveBtn.disabled = true; saveBtn.textContent = 'Salvando alterações...';
+      const updatePayload = {
+        mes, ano: editingEntry.ano || DASHBOARD_YEAR, os, valor, pagamentos, custoPeca, custoAlex,
+        custoCartao: der.custoCartao, lucro: der.lucro, empresa: der.empresa,
+        editadoEm: serverTimestamp(),
+        editadoPor: auth.currentUser ? auth.currentUser.email : null
+      };
+      try {
+        await updateDoc(doc(db, 'lancamentos', editingEntry.id), updatePayload);
+        closeModal();
+      } catch(err){
+        entryError.textContent = 'Erro ao salvar alterações: ' + err.message;
+      } finally {
+        saveBtn.disabled = false; saveBtn.textContent = 'Salvar Alterações';
+      }
+      return;
+    }
+
     saveBtn.disabled = true; saveBtn.textContent = 'Salvando...';
 
     const payload = {
