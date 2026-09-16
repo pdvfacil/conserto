@@ -467,7 +467,6 @@
 
       <div class="preview-box" id="previewBox">
         <div>Custo Cartão: <b id="pvCartao">R$ 0,00</b></div>
-        <div>Comissão (1%): <b id="pvComissao">R$ 0,00</b></div>
         <div>Lucro: <b id="pvLucro">R$ 0,00</b></div>
         <div>Fica p/ Empresa: <b id="pvEmpresa">R$ 0,00</b></div>
       </div>
@@ -563,12 +562,11 @@ Chart.defaults.color = tickColor();
 // ---------------- Fórmulas (iguais à planilha) ----------------
 // pagamentos: [{ forma:'DINHEIRO'|'CREDITO'|'DEBITO'|'PIX', valor:Number }, ...] — pode ser mais de uma forma por lançamento
 function computeDerived(valor, pagamentos, custoPeca, custoAlex){
-  const comissao = valor * 0.01;
   let custoCartao = 0;
   (pagamentos || []).forEach(p => { if (p.forma === 'CREDITO') custoCartao += (p.valor || 0) * 0.10; });
-  const lucro = valor - custoAlex - custoPeca - comissao - custoCartao;
+  const lucro = valor - custoAlex - custoPeca - custoCartao;
   const empresa = lucro;
-  return { comissao, custoCartao, lucro, empresa };
+  return { custoCartao, lucro, empresa };
 }
 
 // Compatível com lançamentos antigos (campo único "pg") e novos (array "pagamentos")
@@ -1051,7 +1049,6 @@ if (notConfigured){
     const { valor, custoPeca, custoAlex, pagamentos } = readForm();
     const der = computeDerived(valor, pagamentos, custoPeca, custoAlex);
     document.getElementById('pvCartao').textContent = fmtBRL(der.custoCartao);
-    document.getElementById('pvComissao').textContent = fmtBRL(der.comissao);
     document.getElementById('pvLucro').textContent = fmtBRL(der.lucro);
     document.getElementById('pvEmpresa').textContent = fmtBRL(der.empresa);
 
@@ -1098,7 +1095,7 @@ if (notConfigured){
     try {
       await addDoc(entriesCol, {
         mes, os, valor, pagamentos, custoPeca, custoAlex,
-        comissao: der.comissao, custoCartao: der.custoCartao, lucro: der.lucro, empresa: der.empresa,
+        custoCartao: der.custoCartao, lucro: der.lucro, empresa: der.empresa,
         criadoEm: serverTimestamp(),
         criadoPor: auth.currentUser ? auth.currentUser.email : null
       });
