@@ -173,8 +173,14 @@
     background:var(--brand); color:#fff; font-size:.72rem; font-weight:700;
     border-radius:999px; padding:2px 9px;
   }
-  .section-title-actions{ display:flex; align-items:center; gap:8px; }
+  .section-title-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .section-title-actions select{ width:auto; padding:6px 10px; font-size:.82rem; }
+  .mes-mini-stats{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    font-size:.78rem; color:var(--text-soft);
+    border-left:1px solid var(--border); padding-left:12px; margin-left:2px;
+  }
+  .mes-mini-stats b{ color:var(--text); font-size:.85rem; }
   .btn-icon{
     background:var(--card); border:1px solid var(--border); border-radius:8px;
     padding:5px 9px; font-size:.95rem; line-height:1; cursor:pointer;
@@ -452,6 +458,12 @@
         <option value="">Todos os meses</option>
       </select>
       <select id="entriesAnoFilter"></select>
+      <div class="mes-mini-stats" id="mesMiniStats">
+        <span>Total Bruto: <b id="miniBruto">—</b></span>
+        <span>Custo Total: <b id="miniCusto">—</b></span>
+        <span>Repasse Alex: <b id="miniAlex">—</b></span>
+        <span>Fica p/ Empresa: <b id="miniEmpresa">—</b></span>
+      </div>
       <button type="button" class="btn-icon" id="entriesPrintBtn" title="Imprimir relatório do mês selecionado" disabled>🖨️</button>
     </div>
   </div>
@@ -870,6 +882,8 @@ function renderEntriesTable(){
     .filter(e => (e.ano || DASHBOARD_YEAR) === filterAno)
     .filter(e => !filterMes || e.mes === filterMes));
 
+  updateEntriesMonthTotals();
+
   document.getElementById('entriesCount').textContent = entries.length;
   const entriesTable = document.getElementById('entriesTable');
   const entriesEmptyNote = document.getElementById('entriesEmptyNote');
@@ -940,11 +954,41 @@ document.getElementById('entriesPrintBtn').addEventListener('click', () => {
   window.print();
 });
 
-function buildPrintReport(mes, ano){
+// Totais (Bruto/Custo/Alex/Empresa) de um mes especifico, somando planilha (so no
+// ano corrente do dashboard) + lancamentos do Firebase daquele mes/ano.
+function getMonthTotals(mes, ano){
   const base = (ano === DASHBOARD_YEAR) ? baselineData() : zeroBaseline();
   const entriesAno = latestEntries.filter(e => (e.ano || DASHBOARD_YEAR) === ano);
   const effective = getEffectiveData(entriesAno, base);
   const i = MESES.indexOf(mes);
+  return {
+    bruto: effective.bruto[i], custo: effective.custo[i], lucro: effective.lucro[i],
+    alex: effective.alex[i], empresa: effective.empresa[i], qtdOS: effective.qtdOS[i]
+  };
+}
+
+function updateEntriesMonthTotals(){
+  const mes = entriesMesFilter.value;
+  const ano = parseInt(entriesAnoFilter.value) || DASHBOARD_YEAR;
+  if (!mes){
+    document.getElementById('miniBruto').textContent = '—';
+    document.getElementById('miniCusto').textContent = '—';
+    document.getElementById('miniAlex').textContent = '—';
+    document.getElementById('miniEmpresa').textContent = '—';
+    return;
+  }
+  const t = getMonthTotals(mes, ano);
+  document.getElementById('miniBruto').textContent = fmtBRL(t.bruto);
+  document.getElementById('miniCusto').textContent = fmtBRL(t.custo);
+  document.getElementById('miniAlex').textContent = fmtBRL(t.alex);
+  document.getElementById('miniEmpresa').textContent = fmtBRL(t.empresa);
+}
+entriesMesFilter.addEventListener('change', updateEntriesMonthTotals);
+entriesAnoFilter.addEventListener('change', updateEntriesMonthTotals);
+
+function buildPrintReport(mes, ano){
+  const effective = getMonthTotals(mes, ano);
+  const entriesAno = latestEntries.filter(e => (e.ano || DASHBOARD_YEAR) === ano);
   const entriesMes = sortByOs(entriesAno.filter(e => e.mes === mes));
 
   const rowsHtml = entriesMes.length ? entriesMes.map(e => `
@@ -975,12 +1019,12 @@ function buildPrintReport(mes, ano){
       <thead><tr><th>Bruto</th><th>Custo</th><th>Lucro</th><th>Alex</th><th>Empresa</th><th>OS</th></tr></thead>
       <tbody>
         <tr>
-          <td>${fmtBRL(effective.bruto[i])}</td>
-          <td>${fmtBRL(effective.custo[i])}</td>
-          <td>${fmtBRL(effective.lucro[i])}</td>
-          <td>${fmtBRL(effective.alex[i])}</td>
-          <td>${fmtBRL(effective.empresa[i])}</td>
-          <td>${fmtInt(effective.qtdOS[i])}</td>
+          <td>${fmtBRL(effective.bruto)}</td>
+          <td>${fmtBRL(effective.custo)}</td>
+          <td>${fmtBRL(effective.lucro)}</td>
+          <td>${fmtBRL(effective.alex)}</td>
+          <td>${fmtBRL(effective.empresa)}</td>
+          <td>${fmtInt(effective.qtdOS)}</td>
         </tr>
       </tbody>
     </table>
