@@ -235,6 +235,10 @@
     margin-top:28px;
   }
 
+  .draft-note{
+    background:var(--amber-bg); color:var(--text); border:1px solid rgba(196,129,30,.35);
+    border-radius:10px; padding:12px 14px; font-size:.85rem; margin:0 0 18px; line-height:1.5;
+  }
   .print-controls{
     display:flex; align-items:center; gap:10px; margin:0 0 22px; flex-wrap:wrap;
   }
@@ -402,6 +406,8 @@
       <button class="btn btn-ghost btn-sm" id="logoutBtn">Sair</button>
     </div>
   </header>
+
+  <div class="draft-note hidden" id="pendingDraftNote"></div>
 
   <div class="print-controls">
     <span class="print-controls-label">Relatório Mensal:</span>
@@ -619,6 +625,30 @@ function tickColor(){ return isDark() ? '#93a1b3' : '#5b6b7c'; }
 
 Chart.defaults.font.family = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 Chart.defaults.color = tickColor();
+
+// ---------------- Rascunho local (recuperação em caso de queda de conexão) ----------------
+const PENDING_DRAFT_KEY = 'gamerCell_pendingDraft';
+function savePendingDraft(draft){
+  try { localStorage.setItem(PENDING_DRAFT_KEY, JSON.stringify(draft)); } catch(e){}
+}
+function clearPendingDraft(){
+  try { localStorage.removeItem(PENDING_DRAFT_KEY); } catch(e){}
+}
+function checkPendingDraft(){
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(PENDING_DRAFT_KEY) || 'null'); } catch(e){}
+  if (!draft) return;
+  const quando = new Date(draft.salvoEm).toLocaleString('pt-BR');
+  const note = document.getElementById('pendingDraftNote');
+  note.classList.remove('hidden');
+  note.innerHTML = `⚠️ Encontramos um lançamento que pode não ter sido salvo: OS <b>${draft.os}</b>,
+    ${fmtBRL(draft.valor)}, de ${quando}. Confira na lista "Últimos lançamentos" — se ele
+    <u>não</u> estiver lá, cadastre de novo. <button type="button" class="btn btn-ghost btn-sm" id="dismissDraftBtn" style="margin-left:8px;">Já conferi, dispensar</button>`;
+  document.getElementById('dismissDraftBtn').addEventListener('click', () => {
+    clearPendingDraft();
+    note.classList.add('hidden');
+  });
+}
 
 // ---------------- Fórmulas (iguais à planilha) ----------------
 // pagamentos: [{ forma:'DINHEIRO'|'CREDITO'|'DEBITO'|'PIX', valor:Number }, ...] — pode ser mais de uma forma por lançamento
@@ -1031,6 +1061,7 @@ if (notConfigured){
       loginScreen.classList.add('hidden');
       appRoot.classList.remove('hidden');
       document.getElementById('userEmailLabel').textContent = user.email;
+      checkPendingDraft();
 
       if (!unsubscribeRole){
         unsubscribeRole = onSnapshot(doc(db, 'usuarios', user.uid), (snap) => {
@@ -1290,17 +1321,30 @@ if (notConfigured){
     const der = computeDerived(valor, pagamentos, custoPeca, custoAlex);
     const saveBtn = document.getElementById('saveEntryBtn');
     saveBtn.disabled = true; saveBtn.textContent = 'Salvando...';
+
+    const payload = {
+      mes, ano: DASHBOARD_YEAR, os, valor, pagamentos, custoPeca, custoAlex,
+      custoCartao: der.custoCartao, lucro: der.lucro, empresa: der.empresa,
+      criadoEm: serverTimestamp(),
+      criadoPor: auth.currentUser ? auth.currentUser.email : null
+    };
+    // Guarda um rascunho local: se a conexao cair no meio do salvamento, isso
+    // permite avisar/recuperar o lancamento depois em vez de perde-lo em silencio.
+    savePendingDraft({ mes, os, valor, pagamentos, custoPeca, custoAlex, salvoEm: Date.now() });
+
+    const slowWarn = setTimeout(() => {
+      entryError.textContent = 'Isso está demorando mais que o normal — verifique sua internet. NÃO feche esta janela: assim que a conexão voltar, o lançamento é salvo sozinho.';
+    }, 8000);
+
     try {
-      await addDoc(entriesCol, {
-        mes, ano: DASHBOARD_YEAR, os, valor, pagamentos, custoPeca, custoAlex,
-        custoCartao: der.custoCartao, lucro: der.lucro, empresa: der.empresa,
-        criadoEm: serverTimestamp(),
-        criadoPor: auth.currentUser ? auth.currentUser.email : null
-      });
+      await addDoc(entriesCol, payload); // continua aguardando ate confirmar de verdade (evita duplicar se reenviar por engano)
+      clearTimeout(slowWarn);
+      clearPendingDraft();
       resetFormForNextEntry();
       document.getElementById('entrySuccess').textContent = `Lançamento OS ${os} salvo! Pode cadastrar o próximo.`;
     } catch(err){
-      entryError.textContent = 'Erro ao salvar: ' + err.message;
+      clearTimeout(slowWarn);
+      entryError.textContent = 'Erro ao salvar: ' + err.message + ' — seus dados continuam preenchidos, pode tentar de novo.';
     } finally {
       saveBtn.disabled = false; saveBtn.textContent = 'Salvar Lançamento';
     }
