@@ -406,6 +406,7 @@
   <div class="print-controls">
     <span class="print-controls-label">Relatório Mensal:</span>
     <select id="printMesSelect"></select>
+    <select id="printAnoSelect"></select>
     <button class="btn btn-primary btn-sm" id="printBtn">🖨️ Imprimir Relatório</button>
   </div>
 
@@ -444,6 +445,7 @@
       <select id="entriesMesFilter">
         <option value="">Todos os meses</option>
       </select>
+      <select id="entriesAnoFilter"></select>
       <button type="button" class="btn-icon" id="entriesPrintBtn" title="Imprimir relatório do mês selecionado" disabled>🖨️</button>
     </div>
   </div>
@@ -600,6 +602,8 @@ import {
 
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const BASE = (typeof DASHBOARD_DATA !== 'undefined') ? DASHBOARD_DATA : null;
+const DASHBOARD_YEAR = new Date().getFullYear();
+const ANOS = [DASHBOARD_YEAR, DASHBOARD_YEAR-1, DASHBOARD_YEAR-2, DASHBOARD_YEAR-3, DASHBOARD_YEAR-4];
 
 const fmtBRL = v => (v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
 const fmtInt = v => (v || 0).toLocaleString('pt-BR');
@@ -650,8 +654,7 @@ function paymentPlainText(e){
   return pays.map(p => `${PG_LABEL[p.forma] || p.forma} ${fmtBRL(p.valor)}`).join(', ');
 }
 
-function baselineData(){
-  if (BASE) return BASE;
+function zeroBaseline(){
   const z = () => MESES.map(()=>0);
   return {
     geradoEm:'—', meses:MESES, bruto:z(), custo:z(), lucro:z(), alex:z(), empresa:z(),
@@ -659,9 +662,13 @@ function baselineData(){
     totais:{ bruto:0,custo:0,lucro:0,alex:0,empresa:0,dinheiro:0,credito:0,debito:0,pix:0,qtdOS:0 }
   };
 }
+function baselineData(){
+  return BASE || zeroBaseline();
+}
 
-function getEffectiveData(entries){
-  const base = baselineData();
+// base: dados da planilha para somar (só existe para o ano corrente do dashboard;
+// anos passados usam zeroBaseline() já que a planilha não tem histórico deles aqui).
+function getEffectiveData(entries, base = baselineData()){
   const d = {
     geradoEm: base.geradoEm, meses: MESES,
     bruto:[...base.bruto], custo:[...base.custo], lucro:[...base.lucro],
@@ -777,11 +784,12 @@ function updateCharts(effective){
 // ---------------- Render ----------------
 let latestEntries = [];
 function render(entries){
-  latestEntries = entries;
-  const effective = getEffectiveData(entries);
+  latestEntries = entries; // todos os anos (usado no filtro e no relatório)
+  const dashboardEntries = entries.filter(e => (e.ano || DASHBOARD_YEAR) === DASHBOARD_YEAR);
+  const effective = getEffectiveData(dashboardEntries);
 
   const baseLabel = BASE ? ('Planilha atualizada em ' + BASE.geradoEm) : 'Sem planilha base';
-  document.getElementById('updatedAt').textContent = baseLabel + ' — ' + entries.length + ' lançamento(s) ao vivo via Firebase';
+  document.getElementById('updatedAt').textContent = baseLabel + ' — ' + dashboardEntries.length + ' lançamento(s) de ' + DASHBOARD_YEAR + ' ao vivo via Firebase';
 
   const emptyNote = document.getElementById('emptyNote');
   if ((effective.totais.bruto||0) === 0){
@@ -824,7 +832,10 @@ function render(entries){
 
 function renderEntriesTable(){
   const filterMes = document.getElementById('entriesMesFilter').value;
-  const entries = filterMes ? latestEntries.filter(e => e.mes === filterMes) : latestEntries;
+  const filterAno = parseInt(document.getElementById('entriesAnoFilter').value) || DASHBOARD_YEAR;
+  const entries = latestEntries
+    .filter(e => (e.ano || DASHBOARD_YEAR) === filterAno)
+    .filter(e => !filterMes || e.mes === filterMes);
 
   document.getElementById('entriesCount').textContent = entries.length;
   const entriesTable = document.getElementById('entriesTable');
@@ -833,8 +844,8 @@ function renderEntriesTable(){
     entriesTable.classList.add('hidden');
     entriesEmptyNote.style.display = 'block';
     entriesEmptyNote.textContent = filterMes
-      ? `Nenhum lançamento cadastrado pelo dashboard em ${filterMes}.`
-      : 'Nenhum lançamento cadastrado pelo dashboard ainda. Clique em "+ Novo Lançamento" para começar.';
+      ? `Nenhum lançamento cadastrado pelo dashboard em ${filterMes} de ${filterAno}.`
+      : `Nenhum lançamento cadastrado pelo dashboard em ${filterAno}.`;
   } else {
     entriesTable.classList.remove('hidden');
     entriesEmptyNote.style.display = 'none';
@@ -855,34 +866,50 @@ function renderEntriesTable(){
 }
 
 // ---------------- Relatório mensal (impressão) ----------------
+function populateMesSelect(sel){
+  MESES.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = m;
+    sel.appendChild(opt);
+  });
+}
+function populateAnoSelect(sel){
+  ANOS.forEach(y => {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    sel.appendChild(opt);
+  });
+  sel.value = DASHBOARD_YEAR;
+}
+
 const printMesSelect = document.getElementById('printMesSelect');
-MESES.forEach(m => {
-  const opt = document.createElement('option');
-  opt.value = m; opt.textContent = m;
-  printMesSelect.appendChild(opt);
-});
+const printAnoSelect = document.getElementById('printAnoSelect');
+populateMesSelect(printMesSelect);
+populateAnoSelect(printAnoSelect);
 printMesSelect.value = MESES[new Date().getMonth()];
 
 const entriesMesFilter = document.getElementById('entriesMesFilter');
-MESES.forEach(m => {
-  const opt = document.createElement('option');
-  opt.value = m; opt.textContent = m;
-  entriesMesFilter.appendChild(opt);
-});
+const entriesAnoFilter = document.getElementById('entriesAnoFilter');
+populateMesSelect(entriesMesFilter);
+populateAnoSelect(entriesAnoFilter);
+
 entriesMesFilter.addEventListener('change', () => {
   renderEntriesTable();
   document.getElementById('entriesPrintBtn').disabled = !entriesMesFilter.value;
 });
+entriesAnoFilter.addEventListener('change', renderEntriesTable);
 document.getElementById('entriesPrintBtn').addEventListener('click', () => {
   if (!entriesMesFilter.value) return;
-  buildPrintReport(entriesMesFilter.value);
+  buildPrintReport(entriesMesFilter.value, parseInt(entriesAnoFilter.value));
   window.print();
 });
 
-function buildPrintReport(mes){
-  const effective = getEffectiveData(latestEntries);
+function buildPrintReport(mes, ano){
+  const base = (ano === DASHBOARD_YEAR) ? baselineData() : zeroBaseline();
+  const entriesAno = latestEntries.filter(e => (e.ano || DASHBOARD_YEAR) === ano);
+  const effective = getEffectiveData(entriesAno, base);
   const i = MESES.indexOf(mes);
-  const entriesMes = latestEntries.filter(e => e.mes === mes);
+  const entriesMes = entriesAno.filter(e => e.mes === mes);
 
   const rowsHtml = entriesMes.length ? entriesMes.map(e => `
     <tr>
@@ -896,16 +923,18 @@ function buildPrintReport(mes){
     </tr>
   `).join('') : `<tr><td colspan="7" style="text-align:center;color:#666;">Nenhum lançamento cadastrado pelo dashboard neste mês.</td></tr>`;
 
+  const totaisLabel = (ano === DASHBOARD_YEAR) ? 'Totais do mês (planilha + dashboard)' : 'Totais do mês (dashboard)';
+
   document.getElementById('printArea').innerHTML = `
     <div class="print-header">
       <img src="logo.jpeg" alt="Gamer & Cell" style="height:50px;">
       <div>
         <h1>Gamer &amp; Cell — Relatório Mensal</h1>
-        <p>${mes} de 2026 — gerado em ${new Date().toLocaleString('pt-BR')}</p>
+        <p>${mes} de ${ano} — gerado em ${new Date().toLocaleString('pt-BR')}</p>
       </div>
     </div>
 
-    <h3>Totais do mês (planilha + dashboard)</h3>
+    <h3>${totaisLabel}</h3>
     <table class="print-summary">
       <thead><tr><th>Bruto</th><th>Custo</th><th>Lucro</th><th>Alex</th><th>Empresa</th><th>OS</th></tr></thead>
       <tbody>
@@ -930,7 +959,7 @@ function buildPrintReport(mes){
 }
 
 document.getElementById('printBtn').addEventListener('click', () => {
-  buildPrintReport(printMesSelect.value);
+  buildPrintReport(printMesSelect.value, parseInt(printAnoSelect.value));
   window.print();
 });
 
@@ -1263,7 +1292,7 @@ if (notConfigured){
     saveBtn.disabled = true; saveBtn.textContent = 'Salvando...';
     try {
       await addDoc(entriesCol, {
-        mes, os, valor, pagamentos, custoPeca, custoAlex,
+        mes, ano: DASHBOARD_YEAR, os, valor, pagamentos, custoPeca, custoAlex,
         custoCartao: der.custoCartao, lucro: der.lucro, empresa: der.empresa,
         criadoEm: serverTimestamp(),
         criadoPor: auth.currentUser ? auth.currentUser.email : null
