@@ -266,6 +266,18 @@
 
   /* ---------- Entries list ---------- */
   .entries-scroll{ overflow-x:auto; margin-bottom:26px; }
+  .users-scroll{ margin-bottom:6px; max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:12px; }
+  table.users-table{ width:100%; border-collapse:collapse; font-size:.84rem; }
+  table.users-table th, table.users-table td{ padding:9px 12px; text-align:left; border-bottom:1px solid var(--border); }
+  table.users-table th:last-child, table.users-table td:last-child{ text-align:right; }
+  table.users-table thead th{
+    background:var(--bg); color:var(--text-soft); font-weight:700; font-size:.7rem;
+    text-transform:uppercase; letter-spacing:.3px; position:sticky; top:0;
+  }
+  table.users-table tbody tr:last-child td{ border-bottom:none; }
+  .role-badge{ display:inline-block; font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:999px; }
+  .role-admin{ background:var(--green-bg); color:var(--green); }
+  .role-leitura{ background:var(--blue-bg); color:var(--blue); }
   table.entries{
     width:100%; min-width:760px; border-collapse:collapse;
     background:var(--card); border:1px solid var(--border); border-radius:14px;
@@ -345,9 +357,15 @@
     <div class="header-actions">
       <span class="userEmail" id="userEmailLabel"></span>
       <button class="btn btn-primary btn-sm" id="openModalBtn">+ Novo Lançamento</button>
+      <button class="btn btn-ghost btn-sm hidden" id="openSettingsBtn" title="Configurações">⚙️ Configurações</button>
       <button class="btn btn-ghost btn-sm" id="logoutBtn">Sair</button>
     </div>
   </header>
+
+  <p class="empty-note hidden" id="noRoleNote">
+    Sua conta ainda não tem uma função liberada neste dashboard. Peça para um administrador
+    te cadastrar em <b>⚙️ Configurações</b>.
+  </p>
 
   <div class="kpis" id="kpiRow"></div>
 
@@ -464,13 +482,64 @@
   </div>
 </div>
 
+<!-- ============ MODAL: configurações / usuários ============ -->
+<div class="modal-overlay hidden" id="settingsOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Configurações</h2>
+      <button class="modal-close" id="closeSettingsBtn" aria-label="Fechar">×</button>
+    </div>
+    <p class="hint">Gerencie quem tem acesso ao dashboard. Administradores cadastram lançamentos e usuários; usuários de leitura só visualizam.</p>
+
+    <div class="section-title" style="margin-top:6px;">
+      <h2 style="font-size:.85rem;">Usuários com acesso</h2>
+    </div>
+    <div class="users-scroll">
+      <table class="users-table" id="usersTable">
+        <thead>
+          <tr><th>E-mail</th><th>Papel</th><th></th></tr>
+        </thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </div>
+
+    <div class="section-title" style="margin-top:20px;">
+      <h2 style="font-size:.85rem;">Novo usuário</h2>
+    </div>
+    <form id="userForm">
+      <div class="form-grid">
+        <div class="field full">
+          <label for="uEmail">E-mail</label>
+          <input id="uEmail" type="email" required placeholder="pessoa@exemplo.com">
+        </div>
+        <div class="field">
+          <label for="uSenha">Senha inicial</label>
+          <input id="uSenha" type="text" required minlength="6" placeholder="mín. 6 caracteres">
+        </div>
+        <div class="field">
+          <label for="uRole">Papel</label>
+          <select id="uRole" required>
+            <option value="leitura">Somente Leitura</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+      </div>
+      <p class="form-error" id="userError"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="cancelUserBtn">Fechar</button>
+        <button type="submit" class="btn btn-primary" id="saveUserBtn">Criar Usuário</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
-  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
-  getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp
+  getFirestore, collection, addDoc, setDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -705,13 +774,14 @@ function render(entries){
         <td>${fmtBRL(e.custoPeca)}</td>
         <td>${fmtBRL(e.custoAlex)}</td>
         <td>${fmtBRL(e.lucro)}</td>
-        <td><button class="btn btn-danger" data-del="${e.id}">Excluir</button></td>
+        <td>${currentRole === 'admin' ? `<button class="btn btn-danger" data-del="${e.id}">Excluir</button>` : ''}</td>
       </tr>
     `).join('');
     entriesBody_bindDeletes();
   }
 }
 
+let currentRole = null;
 let deleteHandler = null;
 function entriesBody_bindDeletes(){
   document.querySelectorAll('#entriesBody [data-del]').forEach(btn => {
@@ -740,8 +810,39 @@ if (notConfigured){
   const auth = getAuth(app);
   const db = getFirestore(app);
   const entriesCol = collection(db, 'lancamentos');
+  const usersCol = collection(db, 'usuarios');
 
   let unsubscribeEntries = null;
+  let unsubscribeUsers = null;
+  let unsubscribeRole = null;
+
+  function applyRoleUI(){
+    const openModalBtn = document.getElementById('openModalBtn');
+    const openSettingsBtn = document.getElementById('openSettingsBtn');
+    const noRoleNote = document.getElementById('noRoleNote');
+
+    openModalBtn.classList.toggle('hidden', currentRole !== 'admin');
+    openSettingsBtn.classList.toggle('hidden', currentRole !== 'admin');
+    noRoleNote.classList.toggle('hidden', !!currentRole);
+
+    if (currentRole === 'admin' && !unsubscribeUsers){
+      unsubscribeUsers = onSnapshot(usersCol, (snap) => {
+        renderUsers(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+      }, (err) => console.error(err));
+    }
+
+    if ((currentRole === 'admin' || currentRole === 'leitura') && !unsubscribeEntries){
+      const q = query(entriesCol, orderBy('criadoEm', 'desc'));
+      unsubscribeEntries = onSnapshot(q, (snap) => {
+        const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        render(entries);
+      }, (err) => {
+        console.error(err);
+        document.getElementById('entriesEmptyNote').textContent =
+          'Erro ao carregar lançamentos do Firebase: ' + err.message;
+      });
+    }
+  }
 
   onAuthStateChanged(auth, (user) => {
     if (user){
@@ -749,21 +850,89 @@ if (notConfigured){
       appRoot.classList.remove('hidden');
       document.getElementById('userEmailLabel').textContent = user.email;
 
-      if (!unsubscribeEntries){
-        const q = query(entriesCol, orderBy('criadoEm', 'desc'));
-        unsubscribeEntries = onSnapshot(q, (snap) => {
-          const entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          render(entries);
+      if (!unsubscribeRole){
+        unsubscribeRole = onSnapshot(doc(db, 'usuarios', user.uid), (snap) => {
+          currentRole = snap.exists() ? snap.data().role : null;
+          applyRoleUI();
         }, (err) => {
           console.error(err);
-          document.getElementById('entriesEmptyNote').textContent =
-            'Erro ao carregar lançamentos do Firebase: ' + err.message;
+          currentRole = null;
+          applyRoleUI();
         });
       }
     } else {
       appRoot.classList.add('hidden');
       loginScreen.classList.remove('hidden');
+      currentRole = null;
       if (unsubscribeEntries){ unsubscribeEntries(); unsubscribeEntries = null; }
+      if (unsubscribeUsers){ unsubscribeUsers(); unsubscribeUsers = null; }
+      if (unsubscribeRole){ unsubscribeRole(); unsubscribeRole = null; }
+    }
+  });
+
+  function renderUsers(users){
+    const roleLabel = { admin:'Administrador', leitura:'Somente Leitura' };
+    document.getElementById('usersBody').innerHTML = users.map(u => `
+      <tr>
+        <td>${u.email || '(sem e-mail)'}</td>
+        <td><span class="role-badge role-${u.role}">${roleLabel[u.role] || u.role}</span></td>
+        <td>${u.id === auth.currentUser.uid
+          ? '<span style="color:var(--text-soft);font-size:.78rem;">(você)</span>'
+          : `<button class="btn btn-danger" data-deluser="${u.id}">Remover acesso</button>`}</td>
+      </tr>
+    `).join('');
+    document.querySelectorAll('#usersBody [data-deluser]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remover o acesso deste usuário? Ele não vai mais conseguir entrar no dashboard.')) return;
+        try { await deleteDoc(doc(db, 'usuarios', btn.getAttribute('data-deluser'))); }
+        catch(err){ alert('Erro ao remover: ' + err.message); }
+      });
+    });
+  }
+
+  // ---- Modal configurações / usuários ----
+  const settingsOverlay = document.getElementById('settingsOverlay');
+  const userForm = document.getElementById('userForm');
+  const userError = document.getElementById('userError');
+
+  function openSettings(){
+    userForm.reset();
+    userError.textContent = '';
+    settingsOverlay.classList.remove('hidden');
+  }
+  function closeSettings(){ settingsOverlay.classList.add('hidden'); }
+
+  document.getElementById('openSettingsBtn').addEventListener('click', openSettings);
+  document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
+  document.getElementById('cancelUserBtn').addEventListener('click', closeSettings);
+  settingsOverlay.addEventListener('click', (ev) => { if (ev.target === settingsOverlay) closeSettings(); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !settingsOverlay.classList.contains('hidden')) closeSettings(); });
+
+  userForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    userError.textContent = '';
+    const email = document.getElementById('uEmail').value.trim();
+    const senha = document.getElementById('uSenha').value;
+    const role = document.getElementById('uRole').value;
+    const btn = document.getElementById('saveUserBtn');
+    btn.disabled = true; btn.textContent = 'Criando...';
+
+    let secondaryApp = null;
+    try {
+      // Cria o novo usuário num app Firebase secundário, pra não derrubar a sua sessão de admin.
+      secondaryApp = initializeApp(cfg, 'secundario-' + Date.now());
+      const secondaryAuth = getAuth(secondaryApp);
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, email, senha);
+      await setDoc(doc(db, 'usuarios', cred.user.uid), {
+        email, role, criadoEm: serverTimestamp(), criadoPor: auth.currentUser.email
+      });
+      await signOut(secondaryAuth);
+      userForm.reset();
+    } catch(err){
+      userError.textContent = 'Erro ao criar usuário: ' + err.message;
+    } finally {
+      if (secondaryApp) { try { await deleteApp(secondaryApp); } catch(e){} }
+      btn.disabled = false; btn.textContent = 'Criar Usuário';
     }
   });
 
