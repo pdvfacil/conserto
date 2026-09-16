@@ -52,9 +52,9 @@ no Firebase — então tudo que você cadastrar pelo botão já entra nos gráfi
 ## Como usar no dia a dia
 
 - **Cadastrar um conserto:** clique em **+ Novo Lançamento**, preencha Mês, OS, Valor,
-  Forma de Pagamento, Custo da Peça e Custo Alex — o resto (comissão, custo do cartão,
-  lucro) é calculado igual à planilha. Salvar grava no Firebase e atualiza o dashboard na
-  hora, em qualquer aparelho logado.
+  Forma(s) de Pagamento (pode dividir entre mais de uma), Custo da Peça e Custo Alex — o
+  resto (comissão, custo do cartão, lucro) é calculado igual à planilha. Salvar grava no
+  Firebase e atualiza o dashboard na hora, em qualquer aparelho logado.
 - **Excluir um lançamento:** na tabela "Últimos lançamentos", clique em **Excluir**.
 - **Fechar o mês na planilha:** continue preenchendo a planilha Excel como sempre (ela
   continua sendo o "histórico oficial"). Depois de fechar um mês nela, rode
@@ -69,24 +69,17 @@ no Firebase — então tudo que você cadastrar pelo botão já entra nos gráfi
    (ou abra um terminal PowerShell nesta pasta e rode `./export_data.ps1`).
 3. O arquivo `data.js` é reescrito com os totais mais recentes.
 
-## Como publicar no GitHub (acessar de qualquer lugar)
+## Como publicar atualizações no GitHub
 
-1. Crie um repositório novo no GitHub (pode ser público — os dados ficam protegidos pelo
-   login do Firebase, não pelo repositório estar privado).
-2. Nesta pasta `dashboard`, rode:
+1. Nesta pasta, rode:
    ```
-   git init
-   git add index.html data.js firebase-config.js logo.jpeg README.md
-   git commit -m "Dashboard inicial"
-   git branch -M main
-   git remote add origin https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
-   git push -u origin main
+   git add -A
+   git commit -m "Atualiza dashboard"
+   git push
    ```
-3. No GitHub: **Settings → Pages → Source: Deploy from a branch → Branch: main / (root)**.
-4. Depois de alguns minutos o dashboard fica disponível em
-   `https://SEU-USUARIO.github.io/SEU-REPOSITORIO/`. Entre com o e-mail/senha cadastrados
-   no passo 3 da configuração do Firebase.
+2. O GitHub Pages atualiza sozinho em alguns minutos em
+   `https://pdvfacil.github.io/conserto/`.
 
 > Dica: no console do Firebase, em **Authentication → Settings → Authorized domains**,
-> adicione `SEU-USUARIO.github.io` para garantir que o login funcione no endereço do
+> adicione `pdvfacil.github.io` para garantir que o login funcione no endereço do
 > GitHub Pages.
