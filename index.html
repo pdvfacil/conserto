@@ -227,6 +227,35 @@
     margin-top:28px;
   }
 
+  .print-controls{
+    display:flex; align-items:center; gap:10px; margin-bottom:26px;
+  }
+  .print-controls select{ max-width:220px; }
+
+  #printArea{ display:none; }
+  @media print{
+    body > *:not(#printArea){ display:none !important; }
+    #printArea{
+      display:block !important; width:100%;
+      color:#000; font-family:Arial,Helvetica,sans-serif;
+    }
+    .print-header{ display:flex; align-items:center; gap:14px; margin-bottom:18px; }
+    .print-header h1{ font-size:1.3rem; margin:0; }
+    .print-header p{ margin:2px 0 0; color:#444; font-size:.85rem; }
+    table.print-summary, table.print-detail{
+      width:100%; border-collapse:collapse; margin-bottom:18px; font-size:.85rem;
+    }
+    table.print-summary th, table.print-summary td,
+    table.print-detail th, table.print-detail td{
+      border:1px solid #999; padding:6px 8px; text-align:right;
+    }
+    table.print-summary th:first-child, table.print-summary td:first-child,
+    table.print-detail th:first-child, table.print-detail td:first-child{ text-align:left; }
+    table.print-summary th, table.print-detail th{ background:#eee; }
+    #printArea h3{ font-size:1rem; margin:0 0 8px; }
+    #printArea .print-hint{ color:#555; font-size:.8rem; margin:-6px 0 14px; }
+  }
+
   /* ---------- Modal ---------- */
   .modal-overlay{
     position:fixed; inset:0; background:rgba(10,15,25,.55);
@@ -422,8 +451,19 @@
     </table>
   </div>
 
+  <div class="section-title">
+    <h2>Relatório Mensal</h2>
+  </div>
+  <div class="print-controls">
+    <select id="printMesSelect"></select>
+    <button class="btn btn-primary btn-sm" id="printBtn">🖨️ Imprimir Relatório</button>
+  </div>
+
   <footer>Base: FECHAMENTO CONSERTO LT 2026.xlsx (export_data.ps1) + lançamentos ao vivo via Firebase</footer>
 </div>
+
+<!-- ============ Área de impressão (só aparece ao imprimir) ============ -->
+<div id="printArea"></div>
 
 <!-- ============ MODAL: novo lançamento ============ -->
 <div class="modal-overlay hidden" id="entryOverlay">
@@ -588,6 +628,12 @@ function paymentBadgesHtml(e){
   }
   return pays.map(p => `<span class="pg-badge pg-${p.forma}">${PG_LABEL[p.forma] || p.forma} ${fmtBRL(p.valor)}</span>`).join('');
 }
+function paymentPlainText(e){
+  const pays = distributePayments(e);
+  if (pays.length === 0) return '—';
+  if (pays.length === 1) return PG_LABEL[pays[0].forma] || pays[0].forma || '—';
+  return pays.map(p => `${PG_LABEL[p.forma] || p.forma} ${fmtBRL(p.valor)}`).join(', ');
+}
 
 function baselineData(){
   if (BASE) return BASE;
@@ -714,7 +760,9 @@ function updateCharts(effective){
 }
 
 // ---------------- Render ----------------
+let latestEntries = [];
 function render(entries){
+  latestEntries = entries;
   const effective = getEffectiveData(entries);
 
   const baseLabel = BASE ? ('Planilha atualizada em ' + BASE.geradoEm) : 'Sem planilha base';
@@ -780,6 +828,70 @@ function render(entries){
     entriesBody_bindDeletes();
   }
 }
+
+// ---------------- Relatório mensal (impressão) ----------------
+const printMesSelect = document.getElementById('printMesSelect');
+MESES.forEach(m => {
+  const opt = document.createElement('option');
+  opt.value = m; opt.textContent = m;
+  printMesSelect.appendChild(opt);
+});
+printMesSelect.value = MESES[new Date().getMonth()];
+
+function buildPrintReport(mes){
+  const effective = getEffectiveData(latestEntries);
+  const i = MESES.indexOf(mes);
+  const entriesMes = latestEntries.filter(e => e.mes === mes);
+
+  const rowsHtml = entriesMes.length ? entriesMes.map(e => `
+    <tr>
+      <td>${e.os}</td>
+      <td>${fmtBRL(e.valor)}</td>
+      <td>${paymentPlainText(e)}</td>
+      <td>${fmtBRL(e.custoPeca)}</td>
+      <td>${fmtBRL(e.custoAlex)}</td>
+      <td>${fmtBRL(e.custoCartao || 0)}</td>
+      <td>${fmtBRL(e.lucro)}</td>
+    </tr>
+  `).join('') : `<tr><td colspan="7" style="text-align:center;color:#666;">Nenhum lançamento cadastrado pelo dashboard neste mês.</td></tr>`;
+
+  document.getElementById('printArea').innerHTML = `
+    <div class="print-header">
+      <img src="logo.jpeg" alt="Gamer & Cell" style="height:50px;">
+      <div>
+        <h1>Gamer &amp; Cell — Relatório Mensal</h1>
+        <p>${mes} de 2026 — gerado em ${new Date().toLocaleString('pt-BR')}</p>
+      </div>
+    </div>
+
+    <h3>Totais do mês (planilha + dashboard)</h3>
+    <table class="print-summary">
+      <thead><tr><th>Bruto</th><th>Custo</th><th>Lucro</th><th>Alex</th><th>Empresa</th><th>OS</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>${fmtBRL(effective.bruto[i])}</td>
+          <td>${fmtBRL(effective.custo[i])}</td>
+          <td>${fmtBRL(effective.lucro[i])}</td>
+          <td>${fmtBRL(effective.alex[i])}</td>
+          <td>${fmtBRL(effective.empresa[i])}</td>
+          <td>${fmtInt(effective.qtdOS[i])}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Lançamentos cadastrados no dashboard (${entriesMes.length})</h3>
+    <p class="print-hint">Não inclui lançamentos fechados direto na planilha Excel (esses entram só no total acima).</p>
+    <table class="print-detail">
+      <thead><tr><th>OS</th><th>Valor</th><th>Pagamento</th><th>Peça</th><th>Alex</th><th>Cartão</th><th>Lucro</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  `;
+}
+
+document.getElementById('printBtn').addEventListener('click', () => {
+  buildPrintReport(printMesSelect.value);
+  window.print();
+});
 
 let currentRole = null;
 let deleteHandler = null;
