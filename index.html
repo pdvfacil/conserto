@@ -173,6 +173,14 @@
     background:var(--brand); color:#fff; font-size:.72rem; font-weight:700;
     border-radius:999px; padding:2px 9px;
   }
+  .section-title-actions{ display:flex; align-items:center; gap:8px; }
+  .section-title-actions select{ width:auto; padding:6px 10px; font-size:.82rem; }
+  .btn-icon{
+    background:var(--card); border:1px solid var(--border); border-radius:8px;
+    padding:5px 9px; font-size:.95rem; line-height:1; cursor:pointer;
+  }
+  .btn-icon:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn-icon:not(:disabled):hover{ filter:brightness(0.97); }
 
   .table-scroll{
     overflow-x:auto;
@@ -431,7 +439,13 @@
 
   <div class="section-title">
     <h2>Últimos lançamentos</h2>
-    <span class="count" id="entriesCount">0</span>
+    <div class="section-title-actions">
+      <span class="count" id="entriesCount">0</span>
+      <select id="entriesMesFilter">
+        <option value="">Todos os meses</option>
+      </select>
+      <button type="button" class="btn-icon" id="entriesPrintBtn" title="Imprimir relatório do mês selecionado" disabled>🖨️</button>
+    </div>
   </div>
   <p class="empty-note" id="entriesEmptyNote">Nenhum lançamento cadastrado pelo dashboard ainda. Clique em "+ Novo Lançamento" para começar.</p>
   <div class="entries-scroll">
@@ -805,12 +819,22 @@ function render(entries){
     </tr>
   `;
 
+  renderEntriesTable();
+}
+
+function renderEntriesTable(){
+  const filterMes = document.getElementById('entriesMesFilter').value;
+  const entries = filterMes ? latestEntries.filter(e => e.mes === filterMes) : latestEntries;
+
   document.getElementById('entriesCount').textContent = entries.length;
   const entriesTable = document.getElementById('entriesTable');
   const entriesEmptyNote = document.getElementById('entriesEmptyNote');
   if (entries.length === 0){
     entriesTable.classList.add('hidden');
     entriesEmptyNote.style.display = 'block';
+    entriesEmptyNote.textContent = filterMes
+      ? `Nenhum lançamento cadastrado pelo dashboard em ${filterMes}.`
+      : 'Nenhum lançamento cadastrado pelo dashboard ainda. Clique em "+ Novo Lançamento" para começar.';
   } else {
     entriesTable.classList.remove('hidden');
     entriesEmptyNote.style.display = 'none';
@@ -838,6 +862,22 @@ MESES.forEach(m => {
   printMesSelect.appendChild(opt);
 });
 printMesSelect.value = MESES[new Date().getMonth()];
+
+const entriesMesFilter = document.getElementById('entriesMesFilter');
+MESES.forEach(m => {
+  const opt = document.createElement('option');
+  opt.value = m; opt.textContent = m;
+  entriesMesFilter.appendChild(opt);
+});
+entriesMesFilter.addEventListener('change', () => {
+  renderEntriesTable();
+  document.getElementById('entriesPrintBtn').disabled = !entriesMesFilter.value;
+});
+document.getElementById('entriesPrintBtn').addEventListener('click', () => {
+  if (!entriesMesFilter.value) return;
+  buildPrintReport(entriesMesFilter.value);
+  window.print();
+});
 
 function buildPrintReport(mes){
   const effective = getEffectiveData(latestEntries);
