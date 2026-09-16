@@ -228,29 +228,32 @@
   }
 
   .print-controls{
-    display:flex; align-items:center; gap:10px; margin-bottom:26px;
+    display:flex; align-items:center; gap:10px; margin:0 0 22px; flex-wrap:wrap;
   }
+  .print-controls-label{ font-size:.85rem; font-weight:700; color:var(--text-soft); }
   .print-controls select{ max-width:220px; }
 
   #printArea{ display:none; }
   @media print{
+    @page{ size:auto; margin:12mm; }
+    html, body{ width:auto; overflow:visible; }
     body > *:not(#printArea){ display:none !important; }
     #printArea{
-      display:block !important; width:100%;
-      color:#000; font-family:Arial,Helvetica,sans-serif;
+      display:block !important; width:100%; max-width:100%;
+      box-sizing:border-box; color:#000; font-family:Arial,Helvetica,sans-serif;
     }
     .print-header{ display:flex; align-items:center; gap:14px; margin-bottom:18px; }
-    .print-header h1{ font-size:1.3rem; margin:0; }
-    .print-header p{ margin:2px 0 0; color:#444; font-size:.85rem; }
+    .print-header h1{ font-size:1.2rem; margin:0; }
+    .print-header p{ margin:2px 0 0; color:#444; font-size:.82rem; }
     table.print-summary, table.print-detail{
-      width:100%; border-collapse:collapse; margin-bottom:18px; font-size:.85rem;
+      width:100%; max-width:100%; table-layout:fixed;
+      border-collapse:collapse; margin-bottom:18px; font-size:.78rem;
     }
     table.print-summary th, table.print-summary td,
     table.print-detail th, table.print-detail td{
-      border:1px solid #999; padding:6px 8px; text-align:right;
+      border:1px solid #999; padding:6px 6px; text-align:center;
+      word-wrap:break-word; overflow-wrap:break-word;
     }
-    table.print-summary th:first-child, table.print-summary td:first-child,
-    table.print-detail th:first-child, table.print-detail td:first-child{ text-align:left; }
     table.print-summary th, table.print-detail th{ background:#eee; }
     #printArea h3{ font-size:1rem; margin:0 0 8px; }
     #printArea .print-hint{ color:#555; font-size:.8rem; margin:-6px 0 14px; }
@@ -392,6 +395,12 @@
     </div>
   </header>
 
+  <div class="print-controls">
+    <span class="print-controls-label">Relatório Mensal:</span>
+    <select id="printMesSelect"></select>
+    <button class="btn btn-primary btn-sm" id="printBtn">🖨️ Imprimir Relatório</button>
+  </div>
+
   <p class="empty-note hidden" id="noRoleNote">
     Sua conta ainda não tem uma função liberada neste dashboard. Peça para um administrador
     te cadastrar em <b>⚙️ Configurações</b>.
@@ -449,14 +458,6 @@
       <tbody id="detailBody"></tbody>
       <tfoot id="detailFoot"></tfoot>
     </table>
-  </div>
-
-  <div class="section-title">
-    <h2>Relatório Mensal</h2>
-  </div>
-  <div class="print-controls">
-    <select id="printMesSelect"></select>
-    <button class="btn btn-primary btn-sm" id="printBtn">🖨️ Imprimir Relatório</button>
   </div>
 
   <footer>Base: FECHAMENTO CONSERTO LT 2026.xlsx (export_data.ps1) + lançamentos ao vivo via Firebase</footer>
