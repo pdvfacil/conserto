@@ -220,6 +220,7 @@
     letter-spacing:.3px;
   }
   table.detail tbody tr:hover{ background:var(--bg); }
+  table.detail tbody tr.row-sel td{ background:var(--green-bg); font-weight:700; }
   table.detail tfoot td{
     font-weight:700;
     background:var(--bg);
@@ -415,7 +416,7 @@
   <div class="draft-note hidden" id="pendingDraftNote"></div>
 
   <div class="print-controls">
-    <span class="print-controls-label">Relatório Mensal:</span>
+    <span class="print-controls-label">Relatório:</span>
     <select id="printMesSelect"></select>
     <select id="printAnoSelect"></select>
     <button class="btn btn-primary btn-sm" id="printBtn">🖨️ Imprimir Relatório</button>
@@ -433,19 +434,19 @@
 
   <div class="charts">
     <div class="panel">
-      <h3>Faturamento, Custo e Lucro por Mês</h3>
+      <h3 id="titleChart1">Faturamento, Custo e Lucro por Mês</h3>
       <div class="chart-box"><canvas id="chartBrutoCustoLucro"></canvas></div>
     </div>
     <div class="panel">
-      <h3>Evolução do Lucro Mensal</h3>
+      <h3 id="titleChart2">Evolução do Lucro Mensal</h3>
       <div class="chart-box"><canvas id="chartLucroLinha"></canvas></div>
     </div>
     <div class="panel">
-      <h3>Repasse: Alex vs Empresa por Mês</h3>
+      <h3 id="titleChart3">Repasse: Alex vs Empresa por Mês</h3>
       <div class="chart-box"><canvas id="chartAlexEmpresa"></canvas></div>
     </div>
     <div class="panel">
-      <h3>Formas de Pagamento no Ano</h3>
+      <h3 id="titleChart4">Formas de Pagamento no Ano</h3>
       <div class="chart-box"><canvas id="chartPagamento"></canvas></div>
     </div>
   </div>
@@ -745,130 +746,188 @@ function getEffectiveData(entries, base = baselineData()){
   return d;
 }
 
-// ---------------- Charts (criados 1x, atualizados depois) ----------------
-let chart1, chart2, chart3, chart4;
-function initCharts(effective){
-  chart1 = new Chart(document.getElementById('chartBrutoCustoLucro'), {
+// ---------------- Período selecionado na caixinha "Relatório" ----------------
+// mes = '' significa "Ano inteiro"
+function getSelectedPeriod(){
+  const mes = document.getElementById('printMesSelect').value;
+  const ano = parseInt(document.getElementById('printAnoSelect').value) || DASHBOARD_YEAR;
+  return { mes, ano };
+}
+
+function getPeriodData(mes, ano){
+  const base = (ano === DASHBOARD_YEAR) ? baselineData() : zeroBaseline();
+  const entriesAno = latestEntries.filter(e => (e.ano || DASHBOARD_YEAR) === ano);
+  const year = getEffectiveData(entriesAno, base);
+
+  if (!mes){
+    return {
+      year, entriesAno, periodoTxt: `ano ${ano}`, totals: year.totais,
+      chart: {
+        labels: year.meses,
+        bruto: year.bruto, custo: year.custo, lucro: year.lucro,
+        alex: year.alex, empresa: year.empresa,
+        linha: year.lucro, linhaLabel: 'Lucro',
+        pag: [year.totais.dinheiro, year.totais.credito, year.totais.debito, year.totais.pix],
+        titles: [
+          `Faturamento, Custo e Lucro por Mês — ${ano}`,
+          `Evolução do Lucro Mensal — ${ano}`,
+          `Repasse: Alex vs Empresa por Mês — ${ano}`,
+          `Formas de Pagamento — ${ano}`
+        ]
+      }
+    };
+  }
+
+  const i = MESES.indexOf(mes);
+  const entriesMes = sortByOs(entriesAno.filter(e => e.mes === mes));
+  const totals = {
+    bruto: year.bruto[i], custo: year.custo[i], lucro: year.lucro[i], alex: year.alex[i], empresa: year.empresa[i],
+    dinheiro: year.dinheiro[i], credito: year.credito[i], debito: year.debito[i], pix: year.pix[i], qtdOS: year.qtdOS[i]
+  };
+
+  // Gráficos do mês: uma barra por OS
+  const labels  = entriesMes.map(e => 'OS ' + e.os);
+  const bruto   = entriesMes.map(e => e.valor || 0);
+  const custo   = entriesMes.map(e => e.custoPeca || 0);
+  const lucro   = entriesMes.map(e => e.lucro || 0);
+  const alex    = entriesMes.map(e => e.custoAlex || 0);
+  const empresa = entriesMes.map(e => e.empresa || 0);
+  // Valores que vieram da planilha Excel (sem OS individual) entram como uma barra "Planilha"
+  if (base.bruto[i] || base.custo[i] || base.lucro[i] || base.alex[i]){
+    labels.unshift('Planilha');
+    bruto.unshift(base.bruto[i]); custo.unshift(base.custo[i]); lucro.unshift(base.lucro[i]);
+    alex.unshift(base.alex[i]); empresa.unshift(base.empresa[i]);
+  }
+  let acc = 0;
+  const linha = lucro.map(v => (acc += v));
+  const per = `${mes}/${ano}`;
+
+  return {
+    year, entriesAno, periodoTxt: per, totals,
+    chart: {
+      labels, bruto, custo, lucro, alex, empresa,
+      linha, linhaLabel: 'Lucro acumulado',
+      pag: [totals.dinheiro, totals.credito, totals.debito, totals.pix],
+      titles: [
+        `Faturamento, Custo e Lucro por OS — ${per}`,
+        `Lucro Acumulado no Mês — ${per}`,
+        `Repasse: Alex vs Empresa por OS — ${per}`,
+        `Formas de Pagamento — ${per}`
+      ]
+    }
+  };
+}
+
+// ---------------- Charts (recriados a cada troca de período) ----------------
+let charts = [];
+function moneyScales(){
+  return { x:{ grid:{ display:false } }, y:{ beginAtZero:true, grid:{ color: gridColor() }, ticks:{ callback:v=>fmtBRL(v) } } };
+}
+const LEGEND_BOTTOM = { position:'bottom', labels:{ boxWidth:10, usePointStyle:true } };
+const TOOLTIP_MONEY = { callbacks:{ label: ctx => ctx.dataset.label + ': ' + fmtBRL(ctx.parsed.y) } };
+
+function drawCharts(c){
+  charts.forEach(ch => ch.destroy());
+  charts = [];
+  c.titles.forEach((t, idx) => { document.getElementById('titleChart' + (idx+1)).textContent = t; });
+
+  charts.push(new Chart(document.getElementById('chartBrutoCustoLucro'), {
     type: 'bar',
-    data: { labels: effective.meses, datasets: [
-      { label:'Bruto', data:effective.bruto, backgroundColor: PALETTE.blue, borderRadius:4 },
-      { label:'Custo', data:effective.custo, backgroundColor: PALETTE.amber, borderRadius:4 },
-      { label:'Lucro', data:effective.lucro, backgroundColor: PALETTE.green, borderRadius:4 },
+    data: { labels: c.labels, datasets: [
+      { label:'Bruto', data:c.bruto, backgroundColor: PALETTE.blue, borderRadius:4 },
+      { label:'Custo', data:c.custo, backgroundColor: PALETTE.amber, borderRadius:4 },
+      { label:'Lucro', data:c.lucro, backgroundColor: PALETTE.green, borderRadius:4 },
     ]},
-    options: {
-      responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10, usePointStyle:true } },
-                tooltip:{ callbacks:{ label: ctx => ctx.dataset.label + ': ' + fmtBRL(ctx.parsed.y) } } },
-      scales:{ x:{ grid:{ display:false } }, y:{ grid:{ color: gridColor() }, ticks:{ callback:v=>fmtBRL(v) } } }
-    }
-  });
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:LEGEND_BOTTOM, tooltip:TOOLTIP_MONEY }, scales: moneyScales() }
+  }));
 
-  chart2 = new Chart(document.getElementById('chartLucroLinha'), {
+  charts.push(new Chart(document.getElementById('chartLucroLinha'), {
     type:'line',
-    data:{ labels: effective.meses, datasets:[{ label:'Lucro', data:effective.lucro, borderColor:PALETTE.green,
+    data:{ labels: c.labels, datasets:[{ label:c.linhaLabel, data:c.linha, borderColor:PALETTE.green,
             backgroundColor:PALETTE.greenSoft, fill:true, tension:.35, pointRadius:4, pointBackgroundColor:PALETTE.green, borderWidth:2.5 }] },
-    options:{
-      responsive:true, maintainAspectRatio:false,
+    options:{ responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => fmtBRL(ctx.parsed.y) } } },
-      scales:{ x:{ grid:{ display:false } }, y:{ grid:{ color: gridColor() }, ticks:{ callback:v=>fmtBRL(v) } } }
-    }
-  });
+      scales: moneyScales() }
+  }));
 
-  chart3 = new Chart(document.getElementById('chartAlexEmpresa'), {
+  charts.push(new Chart(document.getElementById('chartAlexEmpresa'), {
     type:'bar',
-    data:{ labels: effective.meses, datasets:[
-      { label:'Alex', data:effective.alex, backgroundColor: PALETTE.purple, borderRadius:4 },
-      { label:'Empresa', data:effective.empresa, backgroundColor: PALETTE.teal, borderRadius:4 },
+    data:{ labels: c.labels, datasets:[
+      { label:'Alex', data:c.alex, backgroundColor: PALETTE.purple, borderRadius:4 },
+      { label:'Empresa', data:c.empresa, backgroundColor: PALETTE.teal, borderRadius:4 },
     ]},
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10, usePointStyle:true } },
-                tooltip:{ callbacks:{ label: ctx => ctx.dataset.label + ': ' + fmtBRL(ctx.parsed.y) } } },
-      scales:{ x:{ grid:{ display:false } }, y:{ grid:{ color: gridColor() }, ticks:{ callback:v=>fmtBRL(v) } } }
-    }
-  });
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:LEGEND_BOTTOM, tooltip:TOOLTIP_MONEY }, scales: moneyScales() }
+  }));
 
-  chart4 = new Chart(document.getElementById('chartPagamento'), {
+  const pagTotal = c.pag.reduce((a,b)=>a+b,0);
+  charts.push(new Chart(document.getElementById('chartPagamento'), {
     type:'doughnut',
     data:{ labels:['Dinheiro','Cartão Crédito','Cartão Débito','PIX'], datasets:[{
-      data:[effective.totais.dinheiro, effective.totais.credito, effective.totais.debito, effective.totais.pix],
+      data:c.pag,
       backgroundColor:[PALETTE.blue, PALETTE.amber, PALETTE.teal, PALETTE.purple],
       borderWidth:2, borderColor: isDark() ? '#1a2029' : '#ffffff'
     }]},
-    options:{
-      responsive:true, maintainAspectRatio:false, cutout:'62%',
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'62%',
       plugins:{
-        legend:{ position:'bottom', labels:{ boxWidth:10, usePointStyle:true } },
+        legend:LEGEND_BOTTOM,
         tooltip:{ callbacks:{ label: ctx => {
-          const total = effective.totais.dinheiro+effective.totais.credito+effective.totais.debito+effective.totais.pix;
-          const pct = total ? (ctx.parsed/total*100).toFixed(1) : '0.0';
+          const pct = pagTotal ? (ctx.parsed/pagTotal*100).toFixed(1) : '0.0';
           return ctx.label + ': ' + fmtBRL(ctx.parsed) + ' (' + pct + '%)';
         } } }
       }
     }
-  });
-}
-
-function updateCharts(effective){
-  chart1.data.datasets[0].data = effective.bruto;
-  chart1.data.datasets[1].data = effective.custo;
-  chart1.data.datasets[2].data = effective.lucro;
-  chart1.update();
-
-  chart2.data.datasets[0].data = effective.lucro;
-  chart2.update();
-
-  chart3.data.datasets[0].data = effective.alex;
-  chart3.data.datasets[1].data = effective.empresa;
-  chart3.update();
-
-  chart4.data.datasets[0].data = [effective.totais.dinheiro, effective.totais.credito, effective.totais.debito, effective.totais.pix];
-  chart4.update();
+  }));
 }
 
 // ---------------- Render ----------------
 let latestEntries = [];
 function render(entries){
-  latestEntries = entries; // todos os anos (usado no filtro e no relatório)
-  const dashboardEntries = entries.filter(e => (e.ano || DASHBOARD_YEAR) === DASHBOARD_YEAR);
-  const effective = getEffectiveData(dashboardEntries);
+  latestEntries = entries; // todos os anos
+  const { mes, ano } = getSelectedPeriod();
+  const p = getPeriodData(mes, ano);
 
   const baseLabel = BASE ? ('Planilha atualizada em ' + BASE.geradoEm) : 'Sem planilha base';
-  document.getElementById('updatedAt').textContent = baseLabel + ' — ' + dashboardEntries.length + ' lançamento(s) de ' + DASHBOARD_YEAR + ' ao vivo via Firebase';
+  document.getElementById('updatedAt').textContent = baseLabel + ' — ' + p.entriesAno.length + ' lançamento(s) de ' + ano + ' ao vivo via Firebase';
 
   const emptyNote = document.getElementById('emptyNote');
-  if ((effective.totais.bruto||0) === 0){
+  if ((p.totals.bruto||0) === 0){
     emptyNote.style.display = 'block';
-    emptyNote.textContent = 'Nenhum lançamento ainda. Clique em "+ Novo Lançamento" ou preencha a planilha e rode export_data.ps1.';
+    emptyNote.textContent = mes
+      ? `Nenhum lançamento em ${mes} de ${ano}.`
+      : `Nenhum lançamento em ${ano}.`;
   } else {
     emptyNote.style.display = 'none';
   }
 
+  const suf = `(${p.periodoTxt})`;
   const kpis = [
-    { cls:'bruto',   label:'Faturamento Bruto (ano)', value: effective.totais.bruto },
-    { cls:'custo',   label:'Custo Total (ano)',        value: effective.totais.custo },
-    { cls:'lucro',   label:'Lucro Total (ano)',        value: effective.totais.lucro },
-    { cls:'alex',    label:'Repasse Alex (ano)',       value: effective.totais.alex },
-    { cls:'empresa', label:'Fica p/ Empresa (ano)',    value: effective.totais.empresa },
+    { cls:'bruto',   label:`Faturamento Bruto ${suf}`, value: p.totals.bruto },
+    { cls:'custo',   label:`Custo Total ${suf}`,       value: p.totals.custo },
+    { cls:'lucro',   label:`Lucro Total ${suf}`,       value: p.totals.lucro },
+    { cls:'alex',    label:`Repasse Alex ${suf}`,      value: p.totals.alex },
+    { cls:'empresa', label:`Fica p/ Empresa ${suf}`,   value: p.totals.empresa },
   ];
   document.getElementById('kpiRow').innerHTML = kpis.map(k => `
     <div class="kpi ${k.cls}"><div class="label">${k.label}</div><div class="value">${fmtBRL(k.value)}</div></div>
   `).join('');
 
-  if (!chart1) initCharts(effective); else updateCharts(effective);
+  drawCharts(p.chart);
 
-  document.getElementById('detailBody').innerHTML = effective.meses.map((m,i) => `
-    <tr>
-      <td>${m}</td><td>${fmtBRL(effective.bruto[i])}</td><td>${fmtBRL(effective.custo[i])}</td>
-      <td>${fmtBRL(effective.lucro[i])}</td><td>${fmtBRL(effective.alex[i])}</td>
-      <td>${fmtBRL(effective.empresa[i])}</td><td>${fmtInt(effective.qtdOS[i])}</td>
+  const y = p.year;
+  document.getElementById('detailBody').innerHTML = y.meses.map((m,i) => `
+    <tr class="${m === mes ? 'row-sel' : ''}">
+      <td>${m}</td><td>${fmtBRL(y.bruto[i])}</td><td>${fmtBRL(y.custo[i])}</td>
+      <td>${fmtBRL(y.lucro[i])}</td><td>${fmtBRL(y.alex[i])}</td>
+      <td>${fmtBRL(y.empresa[i])}</td><td>${fmtInt(y.qtdOS[i])}</td>
     </tr>
   `).join('');
   document.getElementById('detailFoot').innerHTML = `
     <tr>
-      <td>TOTAL ANO</td><td>${fmtBRL(effective.totais.bruto)}</td><td>${fmtBRL(effective.totais.custo)}</td>
-      <td>${fmtBRL(effective.totais.lucro)}</td><td>${fmtBRL(effective.totais.alex)}</td>
-      <td>${fmtBRL(effective.totais.empresa)}</td><td>${fmtInt(effective.totais.qtdOS)}</td>
+      <td>TOTAL ${ano}</td><td>${fmtBRL(y.totais.bruto)}</td><td>${fmtBRL(y.totais.custo)}</td>
+      <td>${fmtBRL(y.totais.lucro)}</td><td>${fmtBRL(y.totais.alex)}</td>
+      <td>${fmtBRL(y.totais.empresa)}</td><td>${fmtInt(y.totais.qtdOS)}</td>
     </tr>
   `;
 
@@ -934,6 +993,11 @@ function populateAnoSelect(sel){
 
 const printMesSelect = document.getElementById('printMesSelect');
 const printAnoSelect = document.getElementById('printAnoSelect');
+{
+  const optAno = document.createElement('option');
+  optAno.value = ''; optAno.textContent = '📅 Ano inteiro';
+  printMesSelect.appendChild(optAno);
+}
 populateMesSelect(printMesSelect);
 populateAnoSelect(printAnoSelect);
 printMesSelect.value = MESES[new Date().getMonth()];
@@ -942,6 +1006,22 @@ const entriesMesFilter = document.getElementById('entriesMesFilter');
 const entriesAnoFilter = document.getElementById('entriesAnoFilter');
 populateMesSelect(entriesMesFilter);
 populateAnoSelect(entriesAnoFilter);
+
+// Ao trocar o período na caixinha "Relatório", o dashboard inteiro (totais, gráficos,
+// tabela) e a lista de "Últimos lançamentos" passam a mostrar esse período.
+function syncEntriesFilterWithPeriod(){
+  const { mes, ano } = getSelectedPeriod();
+  entriesMesFilter.value = mes;
+  entriesAnoFilter.value = ano;
+  document.getElementById('entriesPrintBtn').disabled = !mes;
+}
+function onPeriodChange(){
+  syncEntriesFilterWithPeriod();
+  render(latestEntries);
+}
+printMesSelect.addEventListener('change', onPeriodChange);
+printAnoSelect.addEventListener('change', onPeriodChange);
+syncEntriesFilterWithPeriod();
 
 entriesMesFilter.addEventListener('change', () => {
   renderEntriesTable();
@@ -1038,8 +1118,54 @@ function buildPrintReport(mes, ano){
   `;
 }
 
+function buildYearPrintReport(ano){
+  const base = (ano === DASHBOARD_YEAR) ? baselineData() : zeroBaseline();
+  const y = getEffectiveData(latestEntries.filter(e => (e.ano || DASHBOARD_YEAR) === ano), base);
+  const t = y.totais;
+  const rows = y.meses.map((m,i) => `
+    <tr>
+      <td>${m}</td><td>${fmtBRL(y.bruto[i])}</td><td>${fmtBRL(y.custo[i])}</td><td>${fmtBRL(y.lucro[i])}</td>
+      <td>${fmtBRL(y.alex[i])}</td><td>${fmtBRL(y.empresa[i])}</td><td>${fmtInt(y.qtdOS[i])}</td>
+    </tr>`).join('');
+  const totaisLabel = (ano === DASHBOARD_YEAR) ? 'Totais do ano (planilha + dashboard)' : 'Totais do ano (dashboard)';
+
+  document.getElementById('printArea').innerHTML = `
+    <div class="print-header">
+      <img src="logo.jpeg" alt="Gamer & Cell" style="height:50px;">
+      <div>
+        <h1>Gamer &amp; Cell — Relatório Anual</h1>
+        <p>Ano ${ano} — gerado em ${new Date().toLocaleString('pt-BR')}</p>
+      </div>
+    </div>
+
+    <h3>${totaisLabel}</h3>
+    <table class="print-summary">
+      <thead><tr><th>Bruto</th><th>Custo</th><th>Lucro</th><th>Alex</th><th>Empresa</th><th>OS</th></tr></thead>
+      <tbody><tr>
+        <td>${fmtBRL(t.bruto)}</td><td>${fmtBRL(t.custo)}</td><td>${fmtBRL(t.lucro)}</td>
+        <td>${fmtBRL(t.alex)}</td><td>${fmtBRL(t.empresa)}</td><td>${fmtInt(t.qtdOS)}</td>
+      </tr></tbody>
+    </table>
+
+    <h3>Formas de pagamento</h3>
+    <table class="print-summary">
+      <thead><tr><th>Dinheiro</th><th>Crédito</th><th>Débito</th><th>PIX</th></tr></thead>
+      <tbody><tr>
+        <td>${fmtBRL(t.dinheiro)}</td><td>${fmtBRL(t.credito)}</td><td>${fmtBRL(t.debito)}</td><td>${fmtBRL(t.pix)}</td>
+      </tr></tbody>
+    </table>
+
+    <h3>Totais por mês</h3>
+    <table class="print-detail">
+      <thead><tr><th>Mês</th><th>Bruto</th><th>Custo</th><th>Lucro</th><th>Alex</th><th>Empresa</th><th>OS</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
 document.getElementById('printBtn').addEventListener('click', () => {
-  buildPrintReport(printMesSelect.value, parseInt(printAnoSelect.value));
+  const { mes, ano } = getSelectedPeriod();
+  if (mes) buildPrintReport(mes, ano); else buildYearPrintReport(ano);
   window.print();
 });
 
