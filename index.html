@@ -895,6 +895,13 @@ function drawCharts(c){
   }));
 }
 
+// "2026-09-16 11:07" (vem do export_data.ps1) -> "11:07 de 16/09/2026"
+function formatGeradoEm(v){
+  const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})/);
+  if (!m) return v;
+  return `${m[4].padStart(2,'0')}:${m[5]} de ${m[3]}/${m[2]}/${m[1]}`;
+}
+
 // ---------------- Render ----------------
 let latestEntries = [];
 function render(entries){
@@ -902,7 +909,7 @@ function render(entries){
   const { mes, ano } = getSelectedPeriod();
   const p = getPeriodData(mes, ano);
 
-  const baseLabel = BASE ? ('Planilha atualizada em ' + BASE.geradoEm) : 'Sem planilha base';
+  const baseLabel = BASE ? ('Planilha atualizada em ' + formatGeradoEm(BASE.geradoEm)) : 'Sem planilha base';
   document.getElementById('updatedAt').textContent = baseLabel + ' — ' + p.entriesAno.length + ' lançamento(s) de ' + ano + ' ao vivo via Firebase';
 
   const emptyNote = document.getElementById('emptyNote');
