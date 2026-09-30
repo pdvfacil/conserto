@@ -1217,9 +1217,15 @@ function loginToEmail(v){
   v = String(v || '').trim();
   return v.includes('@') ? v : normalizeUsername(v) + '@' + USER_DOMAIN;
 }
-function displayUser(email, usuario){
-  if (usuario) return usuario;
-  if (email && email.endsWith('@' + USER_DOMAIN)) return email.slice(0, -(USER_DOMAIN.length + 1));
+function capitalizeLogin(login){
+  return String(login || '').split('.').map(p => p ? p[0].toUpperCase() + p.slice(1) : p).join(' ');
+}
+// nome: exatamente como o admin digitou no cadastro (ex.: "Alexandre").
+// Cadastros antigos sem esse campo mostram o login com a primeira letra maiúscula.
+function displayUser(email, usuario, nome){
+  if (nome) return nome;
+  if (usuario) return capitalizeLogin(usuario);
+  if (email && email.endsWith('@' + USER_DOMAIN)) return capitalizeLogin(email.slice(0, -(USER_DOMAIN.length + 1)));
   return email || '(sem nome)';
 }
 
@@ -1286,6 +1292,10 @@ if (notConfigured){
       if (!unsubscribeRole){
         unsubscribeRole = onSnapshot(doc(db, 'usuarios', user.uid), (snap) => {
           currentRole = snap.exists() ? snap.data().role : null;
+          if (snap.exists()){
+            const d = snap.data();
+            document.getElementById('userEmailLabel').textContent = displayUser(user.email, d.usuario, d.nome);
+          }
           applyRoleUI();
         }, (err) => {
           console.error(err);
@@ -1307,7 +1317,7 @@ if (notConfigured){
     const roleLabel = { admin:'Administrador', leitura:'Somente Leitura' };
     document.getElementById('usersBody').innerHTML = users.map(u => `
       <tr>
-        <td>${displayUser(u.email, u.usuario)}${u.usuario ? ' <span style="color:var(--text-soft);font-size:.72rem;">(usuário)</span>' : ''}</td>
+        <td>${displayUser(u.email, u.usuario, u.nome)}${u.usuario ? ` <span style="color:var(--text-soft);font-size:.72rem;">(login: ${u.usuario})</span>` : ''}</td>
         <td><span class="role-badge role-${u.role}">${roleLabel[u.role] || u.role}</span></td>
         <td>${u.id === auth.currentUser.uid
           ? '<span style="color:var(--text-soft);font-size:.78rem;">(você)</span>'
@@ -1340,7 +1350,7 @@ if (notConfigured){
   function updateUsuarioPreview(){
     const n = normalizeUsername(uUsuarioInput.value);
     uUsuarioPreview.textContent = n
-      ? `Login: ${n} — a pessoa entra digitando só esse nome e a senha.`
+      ? `Aparece como "${uUsuarioInput.value.trim().replace(/\s+/g, ' ')}" — para entrar, digita ${n} (maiúsculas ou minúsculas, tanto faz) e a senha.`
       : 'A pessoa entra digitando só esse nome e a senha.';
   }
   uRoleSel.addEventListener('change', applyUserFormRole);
@@ -1365,9 +1375,10 @@ if (notConfigured){
     userError.textContent = '';
     const senha = document.getElementById('uSenha').value;
     const role = document.getElementById('uRole').value;
-    let email, usuario = null;
+    let email, usuario = null, nome = null;
     if (role === 'leitura'){
-      usuario = normalizeUsername(uUsuarioInput.value);
+      nome = uUsuarioInput.value.trim().replace(/\s+/g, ' ');
+      usuario = normalizeUsername(nome);
       if (usuario.length < 2){
         userError.textContent = 'Digite um nome de usuário (mínimo 2 letras).';
         return;
@@ -1394,7 +1405,7 @@ if (notConfigured){
       const secondaryAuth = getAuth(secondaryApp);
       const cred = await createUserWithEmailAndPassword(secondaryAuth, email, senha);
       const docData = { email, role, criadoEm: serverTimestamp(), criadoPor: auth.currentUser.email };
-      if (usuario) docData.usuario = usuario;
+      if (usuario){ docData.usuario = usuario; docData.nome = nome; }
       await setDoc(doc(db, 'usuarios', cred.user.uid), docData);
       await signOut(secondaryAuth);
       userForm.reset();
