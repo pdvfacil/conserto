@@ -895,11 +895,12 @@ function drawCharts(c){
   }));
 }
 
-// "2026-09-16 11:07" (vem do export_data.ps1) -> "11:07 de 16/09/2026"
+// "2026-09-16 11:07" (vem do export_data.ps1) -> "às 11:07 do dia 16 de setembro de 2026"
 function formatGeradoEm(v){
   const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})/);
-  if (!m) return v;
-  return `${m[4].padStart(2,'0')}:${m[5]} de ${m[3]}/${m[2]}/${m[1]}`;
+  if (!m) return 'em ' + v;
+  const mes = MESES[parseInt(m[2], 10) - 1].toLowerCase();
+  return `às ${m[4].padStart(2,'0')}:${m[5]} do dia ${parseInt(m[3], 10)} de ${mes} de ${m[1]}`;
 }
 
 // ---------------- Render ----------------
@@ -909,7 +910,7 @@ function render(entries){
   const { mes, ano } = getSelectedPeriod();
   const p = getPeriodData(mes, ano);
 
-  const baseLabel = BASE ? ('Planilha atualizada em ' + formatGeradoEm(BASE.geradoEm)) : 'Sem planilha base';
+  const baseLabel = BASE ? ('Planilha atualizada ' + formatGeradoEm(BASE.geradoEm)) : 'Sem planilha base';
   document.getElementById('updatedAt').textContent = baseLabel;
 
   const emptyNote = document.getElementById('emptyNote');
