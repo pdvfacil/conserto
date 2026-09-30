@@ -910,7 +910,7 @@ function render(entries){
   const p = getPeriodData(mes, ano);
 
   const baseLabel = BASE ? ('Planilha atualizada em ' + formatGeradoEm(BASE.geradoEm)) : 'Sem planilha base';
-  document.getElementById('updatedAt').textContent = baseLabel + ' — ' + p.entriesAno.length + ' lançamento(s) de ' + ano + ' ao vivo via Firebase';
+  document.getElementById('updatedAt').textContent = baseLabel;
 
   const emptyNote = document.getElementById('emptyNote');
   if ((p.totals.bruto||0) === 0){
