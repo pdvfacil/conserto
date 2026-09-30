@@ -391,8 +391,8 @@
 
     <form id="loginForm">
       <div class="field">
-        <label for="loginEmail">E-mail</label>
-        <input id="loginEmail" type="email" autocomplete="username" required>
+        <label for="loginEmail">E-mail ou usuário</label>
+        <input id="loginEmail" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
       </div>
       <div class="field">
         <label for="loginPassword">Senha</label>
@@ -583,7 +583,7 @@
     <div class="users-scroll">
       <table class="users-table" id="usersTable">
         <thead>
-          <tr><th>E-mail</th><th>Papel</th><th></th></tr>
+          <tr><th>Usuário / E-mail</th><th>Papel</th><th></th></tr>
         </thead>
         <tbody id="usersBody"></tbody>
       </table>
@@ -595,19 +595,24 @@
     <form id="userForm">
       <div class="form-grid">
         <div class="field full">
-          <label for="uEmail">E-mail</label>
-          <input id="uEmail" type="email" required placeholder="pessoa@exemplo.com">
-        </div>
-        <div class="field">
-          <label for="uSenha">Senha inicial</label>
-          <input id="uSenha" type="text" required minlength="6" placeholder="mín. 6 caracteres">
-        </div>
-        <div class="field">
           <label for="uRole">Papel</label>
           <select id="uRole" required>
-            <option value="leitura">Somente Leitura</option>
+            <option value="leitura">Somente Leitura (visualizar e imprimir)</option>
             <option value="admin">Administrador</option>
           </select>
+        </div>
+        <div class="field full" id="uUsuarioField">
+          <label for="uUsuario">Nome de usuário</label>
+          <input id="uUsuario" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ex: maria">
+          <p class="pg-summary" id="uUsuarioPreview">A pessoa entra digitando só esse nome e a senha.</p>
+        </div>
+        <div class="field full hidden" id="uEmailField">
+          <label for="uEmail">E-mail</label>
+          <input id="uEmail" type="email" placeholder="pessoa@exemplo.com">
+        </div>
+        <div class="field full">
+          <label for="uSenha">Senha inicial</label>
+          <input id="uSenha" type="text" required minlength="6" placeholder="mín. 6 caracteres">
         </div>
       </div>
       <p class="form-error" id="userError"></p>
@@ -1197,6 +1202,27 @@ function entriesBody_bindEdits(entries){
   });
 }
 
+// ---------------- Usuários sem e-mail (somente leitura) ----------------
+// O Firebase exige e-mail no login; para usuários de leitura usamos um e-mail interno
+// gerado a partir do nome (nunca recebe mensagens). Ex.: "Maria Silva" -> maria.silva@gamercell.local
+const USER_DOMAIN = 'gamercell.local';
+function normalizeUsername(nome){
+  return String(nome || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '.')
+    .replace(/[^a-z0-9._-]/g, '')
+    .replace(/\.{2,}/g, '.').replace(/^[.]+|[.]+$/g, '');
+}
+function loginToEmail(v){
+  v = String(v || '').trim();
+  return v.includes('@') ? v : normalizeUsername(v) + '@' + USER_DOMAIN;
+}
+function displayUser(email, usuario){
+  if (usuario) return usuario;
+  if (email && email.endsWith('@' + USER_DOMAIN)) return email.slice(0, -(USER_DOMAIN.length + 1));
+  return email || '(sem nome)';
+}
+
 // ---------------- Firebase ----------------
 const cfg = window.FIREBASE_CONFIG;
 const notConfigured = !cfg || cfg.apiKey === 'COLE_AQUI';
@@ -1254,7 +1280,7 @@ if (notConfigured){
     if (user){
       loginScreen.classList.add('hidden');
       appRoot.classList.remove('hidden');
-      document.getElementById('userEmailLabel').textContent = user.email;
+      document.getElementById('userEmailLabel').textContent = displayUser(user.email);
       checkPendingDraft();
 
       if (!unsubscribeRole){
@@ -1281,7 +1307,7 @@ if (notConfigured){
     const roleLabel = { admin:'Administrador', leitura:'Somente Leitura' };
     document.getElementById('usersBody').innerHTML = users.map(u => `
       <tr>
-        <td>${u.email || '(sem e-mail)'}</td>
+        <td>${displayUser(u.email, u.usuario)}${u.usuario ? ' <span style="color:var(--text-soft);font-size:.72rem;">(usuário)</span>' : ''}</td>
         <td><span class="role-badge role-${u.role}">${roleLabel[u.role] || u.role}</span></td>
         <td>${u.id === auth.currentUser.uid
           ? '<span style="color:var(--text-soft);font-size:.78rem;">(você)</span>'
@@ -1302,9 +1328,28 @@ if (notConfigured){
   const userForm = document.getElementById('userForm');
   const userError = document.getElementById('userError');
 
+  const uRoleSel = document.getElementById('uRole');
+  const uUsuarioInput = document.getElementById('uUsuario');
+  const uUsuarioPreview = document.getElementById('uUsuarioPreview');
+  function applyUserFormRole(){
+    const leitura = uRoleSel.value === 'leitura';
+    document.getElementById('uUsuarioField').classList.toggle('hidden', !leitura);
+    document.getElementById('uEmailField').classList.toggle('hidden', leitura);
+    updateUsuarioPreview();
+  }
+  function updateUsuarioPreview(){
+    const n = normalizeUsername(uUsuarioInput.value);
+    uUsuarioPreview.textContent = n
+      ? `Login: ${n} — a pessoa entra digitando só esse nome e a senha.`
+      : 'A pessoa entra digitando só esse nome e a senha.';
+  }
+  uRoleSel.addEventListener('change', applyUserFormRole);
+  uUsuarioInput.addEventListener('input', updateUsuarioPreview);
+
   function openSettings(){
     userForm.reset();
     userError.textContent = '';
+    applyUserFormRole();
     settingsOverlay.classList.remove('hidden');
   }
   function closeSettings(){ settingsOverlay.classList.add('hidden'); }
@@ -1318,9 +1363,27 @@ if (notConfigured){
   userForm.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     userError.textContent = '';
-    const email = document.getElementById('uEmail').value.trim();
     const senha = document.getElementById('uSenha').value;
     const role = document.getElementById('uRole').value;
+    let email, usuario = null;
+    if (role === 'leitura'){
+      usuario = normalizeUsername(uUsuarioInput.value);
+      if (usuario.length < 2){
+        userError.textContent = 'Digite um nome de usuário (mínimo 2 letras).';
+        return;
+      }
+      email = usuario + '@' + USER_DOMAIN;
+    } else {
+      email = document.getElementById('uEmail').value.trim();
+      if (!email.includes('@')){
+        userError.textContent = 'Administrador precisa de um e-mail válido.';
+        return;
+      }
+    }
+    if (senha.length < 6){
+      userError.textContent = 'A senha precisa ter no mínimo 6 caracteres.';
+      return;
+    }
     const btn = document.getElementById('saveUserBtn');
     btn.disabled = true; btn.textContent = 'Criando...';
 
@@ -1330,13 +1393,24 @@ if (notConfigured){
       secondaryApp = initializeApp(cfg, 'secundario-' + Date.now());
       const secondaryAuth = getAuth(secondaryApp);
       const cred = await createUserWithEmailAndPassword(secondaryAuth, email, senha);
-      await setDoc(doc(db, 'usuarios', cred.user.uid), {
-        email, role, criadoEm: serverTimestamp(), criadoPor: auth.currentUser.email
-      });
+      const docData = { email, role, criadoEm: serverTimestamp(), criadoPor: auth.currentUser.email };
+      if (usuario) docData.usuario = usuario;
+      await setDoc(doc(db, 'usuarios', cred.user.uid), docData);
       await signOut(secondaryAuth);
       userForm.reset();
+      applyUserFormRole();
     } catch(err){
-      userError.textContent = 'Erro ao criar usuário: ' + err.message;
+      if (err && err.code === 'auth/email-already-in-use'){
+        userError.textContent = usuario
+          ? `O usuário "${usuario}" já existe. Use outro nome (ex.: ${usuario}2).`
+          : 'Esse e-mail já está cadastrado.';
+      } else if (err && err.code === 'auth/weak-password'){
+        userError.textContent = 'Senha fraca: use no mínimo 6 caracteres.';
+      } else if (err && err.code === 'auth/invalid-email'){
+        userError.textContent = usuario ? 'Nome de usuário inválido.' : 'E-mail inválido.';
+      } else {
+        userError.textContent = 'Erro ao criar usuário: ' + err.message;
+      }
     } finally {
       if (secondaryApp) { try { await deleteApp(secondaryApp); } catch(e){} }
       btn.disabled = false; btn.textContent = 'Criar Usuário';
@@ -1346,14 +1420,14 @@ if (notConfigured){
   loginForm.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     loginError.textContent = '';
-    const email = document.getElementById('loginEmail').value.trim();
+    const email = loginToEmail(document.getElementById('loginEmail').value);
     const password = document.getElementById('loginPassword').value;
     const btn = document.getElementById('loginSubmitBtn');
     btn.disabled = true; btn.textContent = 'Entrando...';
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err){
-      loginError.textContent = 'E-mail ou senha inválidos.';
+      loginError.textContent = 'Usuário/e-mail ou senha inválidos.';
     } finally {
       btn.disabled = false; btn.textContent = 'Entrar';
     }

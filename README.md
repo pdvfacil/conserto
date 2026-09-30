@@ -30,6 +30,14 @@ Firestore (`usuarios/{uid}` com os campos `email` e `role`: `admin` ou `leitura`
 **regras de segurança** do Firestore são o que realmente impede um usuário "Somente
 Leitura" de cadastrar ou apagar dados — esconder o botão na tela não seria suficiente.
 
+**Usuários Somente Leitura sem e-mail:** em ⚙️ Configurações, ao escolher "Somente Leitura"
+o administrador cadastra só um **nome de usuário** e uma senha. A pessoa entra digitando
+esse nome no campo "E-mail ou usuário". Por dentro, o Firebase recebe um e-mail interno
+`nome@gamercell.local` (nunca recebe mensagens). O nome é normalizado: minúsculas, sem
+acento, espaços viram ponto ("Maria Silva" → `maria.silva`). Não existe "esqueci a senha"
+para esses usuários: remova o acesso e cadastre de novo. Um nome já usado só pode ser
+reaproveitado depois de apagar a conta em **Authentication → Users**.
+
 **1. Publique estas regras** (Firestore Database → aba **Rules** → colar e clicar em
 **Publish**):
 
